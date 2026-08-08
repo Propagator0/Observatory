@@ -29,6 +29,14 @@ set -euo pipefail
 # with enough space — OpenWPM SQLite databases grow fast on large crawls.
 OBSERVATORY_ROOT="${HOME}/observatory"
 
+# Where this script lives. Used to locate the operator manual that ships
+# alongside it in the repository, so it can be installed next to the tools
+# it documents. Resolved before any directory changes occur.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Filename of the operator manual as it appears in the repository.
+MANUAL_SOURCE_NAME="Observatory Operational Manual.md"
+
 # The network interface tshark will capture on.
 # Find yours with: ip link show
 # Common values: eth0, enp3s0, wlan0, wlp2s0
@@ -1793,7 +1801,33 @@ YAML
 }
 
 # =============================================================================
-# SECTION 11: POST-INSTALL VERIFICATION
+# SECTION 11: INSTALL THE OPERATOR MANUAL
+# The Quick Reference Card points operators at ~/observatory/MANUAL.md.
+# Put the manual there so that reference resolves on a provisioned machine.
+# =============================================================================
+
+install_manual() {
+    log_section "Installing Operator Manual"
+
+    local src="${SCRIPT_DIR}/${MANUAL_SOURCE_NAME}"
+    local dest="${OBSERVATORY_ROOT}/MANUAL.md"
+
+    if [[ -f "${src}" ]]; then
+        cp "${src}" "${dest}"
+        log_success "Manual installed to ${dest}"
+        log_step "All 15 sections, including the Quick Reference Card"
+    else
+        # Not fatal — the toolchain works without the manual. But the Quick
+        # Reference Card references this path, so say plainly what's missing.
+        log_warn "Manual not found next to this script — skipping"
+        log_step "Expected: ${src}"
+        log_step "Run the setup script from the repository checkout to install it,"
+        log_step "or copy the manual to ${dest} yourself."
+    fi
+}
+
+# =============================================================================
+# SECTION 12: POST-INSTALL VERIFICATION
 # Verify everything is working before calling the install complete.
 # =============================================================================
 
@@ -1873,7 +1907,7 @@ verify_installation() {
 }
 
 # =============================================================================
-# SECTION 12: PRINT USAGE GUIDE
+# SECTION 13: PRINT USAGE GUIDE
 # The cheat sheet that lives with the project and gets printed at install end.
 # =============================================================================
 
@@ -1984,7 +2018,8 @@ print_usage_guide() {
   │   ├── selenium/     ← authenticated_session.py and interaction scripts
   │   └── sql/          ← pre-written SQL queries for OpenWPM analysis
   ├── .venv/            ← Python virtualenv (Datasette, Selenium, etc.)
-  └── docker-compose.yml
+  ├── docker-compose.yml
+  └── MANUAL.md         ← full operator manual, all 15 sections
 
   THERMAL NOTE (for the 7480):
   ─────────────────────────────
@@ -2035,9 +2070,9 @@ main() {
     write_crawl_scripts
     write_tmux_template
     write_docker_compose
+    install_manual
     verify_installation
     print_usage_guide
 }
 
 main "$@"
-```
