@@ -1,0 +1,43 @@
+# Check current group memberships for your user
+groups
+
+# Expected output includes: docker wireshark
+# Example: username wheel docker wireshark audio video
+
+# If groups are missing, apply them without logging out (current shell only)
+newgrp docker
+
+# This opens a new shell with the docker group active.
+# Run subsequent commands from this shell.
+# Note: you may need to run this again for wireshark in a separate step.
+
+# Apply wireshark group to current shell
+newgrp wireshark
+
+# Verify groups are now active in this shell
+groups
+
+# Permanent fix: log out of your desktop session and log back in.
+# All subsequent shells will have the correct groups automatically.
+
+# Verify docker works without sudo after group refresh
+docker ps
+
+# Expected: empty table (no running containers yet) — NOT a permission error
+
+# Verify tshark can capture without sudo after group refresh
+tshark -i eth0 -c 5 -q
+
+# Replace eth0 with your interface (find it in Section 3)
+# -c 5: capture only 5 packets then stop (this is just a permission test)
+# -q: quiet mode, minimal output
+# Expected: 5 packets captured, no permission errors
+# If still failing: sudo setcap cap_net_raw,cap_net_admin+eip /usr/bin/dumpcap
+
+# Manually set dumpcap capabilities if group approach fails
+sudo setcap cap_net_raw,cap_net_admin+eip /usr/bin/dumpcap
+
+# Verify capabilities were set
+getcap /usr/bin/dumpcap
+
+# Expected: /usr/bin/dumpcap cap_net_raw,cap_net_admin=eip

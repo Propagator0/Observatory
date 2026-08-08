@@ -1,0 +1,76 @@
+# --- IMAGE MANAGEMENT ---
+
+# List all Docker images (verify OpenWPM is present)
+docker images
+
+# Pull latest OpenWPM image (update when project releases new version)
+docker pull ghcr.io/openwpm/openwpm:latest
+
+# Check OpenWPM image size
+docker images ghcr.io/openwpm/openwpm:latest --format "{{.Size}}"
+
+# Remove old/dangling images (free up disk space)
+docker image prune -f
+
+# Remove all unused images (aggressive cleanup — rebuilds will re-pull)
+docker image prune -a -f
+
+# --- CONTAINER MANAGEMENT ---
+
+# List running containers (should be empty when not crawling)
+docker ps
+
+# List all containers including stopped ones
+docker ps -a
+
+# Stop a running container by ID (get ID from docker ps)
+docker stop a1b2c3d4e5f6
+
+# Stop all running containers (emergency stop)
+docker stop $(docker ps -q)
+
+# Remove all stopped containers (cleanup)
+docker container prune -f
+
+# View logs from the most recently run OpenWPM container
+docker logs $(docker ps -lq)
+
+# View logs from a specific container
+docker logs a1b2c3d4e5f6
+
+# View logs in real time from the most recently started container
+docker logs -f $(docker ps -lq)
+
+# --- RESOURCE MONITORING ---
+
+# Live resource usage of all running containers
+docker stats
+
+# One-shot resource snapshot (no continuous display)
+docker stats --no-stream
+
+# --- DOCKER SYSTEM CLEANUP ---
+
+# Show disk usage by Docker (images, containers, volumes, build cache)
+docker system df
+
+# Full system prune (removes everything not currently in use — be careful)
+docker system prune -f
+
+# Remove volumes too (only if you're sure no important data is in Docker volumes)
+docker system prune --volumes -f
+
+# --- TROUBLESHOOTING DOCKER ---
+
+# Restart Docker daemon (if containers are misbehaving)
+sudo systemctl restart docker
+
+# View Docker daemon logs (for startup errors, especially on linux-hardened)
+sudo journalctl -u docker -n 100 --no-pager
+
+# Test that Docker can run containers with network access
+docker run --rm --network host alpine wget -qO- https://api64.ipify.org
+
+# Test that Docker inherits host VPN routing
+# (this should show the VPN IP, not your real IP — if ProtonVPN is connected)
+docker run --rm --network host alpine sh -c "wget -qO- https://api64.ipify.org"

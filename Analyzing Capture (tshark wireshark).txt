@@ -1,0 +1,193 @@
+# --- BASIC CAPTURE STATISTICS ---
+
+# Show overall statistics for a capture file
+capinfos ~/observatory/captures/my_investigation/capture.pcap
+
+# Show packet count and duration only
+capinfos -c -u ~/observatory/captures/my_investigation/capture.pcap
+
+# Count packets by protocol
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -q \
+  -z io,phs
+
+# --- EXTRACTING HOSTNAMES AND IPs ---
+
+# List all unique destination IPs in the capture
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -T fields \
+  -e ip.dst \
+  | sort -u
+
+# List all TLS SNI hostnames (what HTTPS sites were contacted — readable without decryption)
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "tls.handshake.type == 1" \
+  -T fields \
+  -e ip.dst \
+  -e tls.handshake.extensions_server_name \
+  | sort -u
+
+# List all DNS queries made during session
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "dns.flags.response == 0" \
+  -T fields \
+  -e frame.time_relative \
+  -e dns.qry.name \
+  | sort -k2 -u
+
+# Count unique domains contacted (via DNS queries)
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "dns.flags.response == 0" \
+  -T fields \
+  -e dns.qry.name \
+  | sort -u \
+  | wc -l
+
+# --- HTTP TRAFFIC ANALYSIS ---
+
+# List all HTTP request URLs (unencrypted HTTP only)
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "http.request" \
+  -T fields \
+  -e frame.time_relative \
+  -e ip.dst \
+  -e http.request.method \
+  -e http.request.full_uri
+
+# List all HTTP POST requests (data exfiltration candidates)
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "http.request.method == POST" \
+  -T fields \
+  -e frame.time_relative \
+  -e ip.dst \
+  -e http.request.full_uri \
+  -e http.file_data
+
+# Find requests to known tracker endpoints in capture
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "http.request" \
+  -T fields \
+  -e http.request.full_uri \
+  | grep -iE "google-analytics|googletagmanager|doubleclick|facebook.com/tr|bat.bing|hotjar|mixpanel|amplitude|segment.io|clarity.ms"
+
+# --- TIMING ANALYSIS ---
+
+# Show the first 50 connections with timestamps (session timeline)
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "tcp.flags.syn == 1 and tcp.flags.ack == 0" \
+  -T fields \
+  -e frame.time_relative \
+  -e ip.dst \
+  -e tcp.dstport \
+  | head -50
+
+# Find connections that happened immediately on page load (first 5 seconds)
+# These are pre-loaded trackers injected before any user interaction
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "frame.time_relative < 5 and tls.handshake.type == 1" \
+  -T fields \
+  -e frame.time_relative \
+  -e tls.handshake.extensions_server_name
+
+# --- DNS LEAK DETECTION ---
+
+# Check if any DNS queries went to your ISP's DNS instead of through VPN
+# First: identify your ISP's DNS server IP (visible in router settings, or:)
+nmcli dev show | grep DNS
+
+# Then search for DNS traffic to that IP in the pre-VPN capture
+tshark \
+  -r ~/observatory/captures/dual_session/pre_vpn.pcap \
+  -n \
+  -Y "dns and ip.dst == 192.168.1.1" \
+  -T fields \
+  -e frame.time_relative \
+  -e dns.qry.name
+
+# Replace 192.168.1.1 with your router/ISP DNS IP
+# Any results here = DNS leak (queries bypassing VPN tunnel)
+
+# --- OPENING IN WIRESHARK GUI ---
+
+# Open a capture file in Wireshark for visual analysis
+wireshark ~/observatory/captures/my_investigation/capture.pcap
+
+# Open and immediately apply a filter (filter syntax in double quotes)
+wireshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -Y "tls.handshake.type == 1"
+
+# Open with color profiles for web traffic analysis
+# (do this once inside Wireshark: View → Coloring Rules → import observatory rules)
+wireshark ~/observatory/captures/my_investigation/capture.pcap
+
+# --- USEFUL WIRESHARK DISPLAY FILTERS (paste into Wireshark filter bar) ---
+
+# All TLS handshakes (see what HTTPS hosts were contacted)
+# tls.handshake.type == 1
+
+# All DNS queries
+# dns.flags.response == 0
+
+# All HTTP requests
+# http.request
+
+# All HTTP POST requests
+# http.request.method == "POST"
+
+# Traffic to/from a specific IP
+# ip.addr == 142.250.185.78
+
+# Traffic to a specific port
+# tcp.dstport == 443
+
+# Large packets (possible data exfiltration — unusual large POST bodies)
+# frame.len > 10000 and http.request.method == "POST"
+
+# All connections established in first 3 seconds of capture
+# frame.time_relative < 3 and tcp.flags.syn == 1
+
+# --- EXPORTING DATA FROM CAPTURES ---
+
+# Export all HTTP objects (files transferred over HTTP) from a capture
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  --export-objects http,~/observatory/captures/my_investigation/http_objects
+
+# List what was exported
+ls -la ~/observatory/captures/my_investigation/http_objects/
+
+# Export as CSV for import into spreadsheet
+tshark \
+  -r ~/observatory/captures/my_investigation/capture.pcap \
+  -n \
+  -Y "tls.handshake.type == 1" \
+  -T fields \
+  -e frame.number \
+  -e frame.time_relative \
+  -e ip.src \
+  -e ip.dst \
+  -e tls.handshake.extensions_server_name \
+  -E header=y \
+  -E separator=, \
+  -E quote=d \
+  > ~/observatory/captures/my_investigation/tls_connections.csv

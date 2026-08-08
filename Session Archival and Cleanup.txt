@@ -1,0 +1,111 @@
+# --- ARCHIVING A COMPLETED SESSION ---
+
+# Create a session archive with all relevant files
+SESSION_NAME="nytimes_investigation_20240115"
+ARCHIVE_DIR=~/observatory/archives
+
+mkdir -p "$ARCHIVE_DIR"
+
+# Package the crawl database, capture files, and session notes together
+tar -czf \
+  "$ARCHIVE_DIR/${SESSION_NAME}_archive.tar.gz" \
+  ~/observatory/crawls/$SESSION_NAME/ \
+  ~/observatory/captures/$SESSION_NAME/
+
+# Verify archive integrity
+tar -tzf "$ARCHIVE_DIR/${SESSION_NAME}_archive.tar.gz" | head -20
+
+# Check archive size
+ls -lh "$ARCHIVE_DIR/${SESSION_NAME}_archive.tar.gz"
+
+# --- GENERATING SESSION REPORT ---
+
+# Generate a quick text report from the database
+SESSION_NAME="nytimes_investigation_20240115"
+DB=~/observatory/crawls/$SESSION_NAME/crawl.sqlite
+REPORT=~/observatory/crawls/$SESSION_NAME/report.txt
+
+{
+  echo "OBSERVATORY SESSION REPORT"
+  echo "Session: $SESSION_NAME"
+  echo "Generated: $(date)"
+  echo ""
+  echo "=== SITES CRAWLED ==="
+  sqlite3 "$DB" "SELECT site_url FROM site_visits ORDER BY start_time;"
+  echo ""
+  echo "=== REQUEST TOTALS ==="
+  sqlite3 -column "$DB" \
+    "SELECT sv.site_url, COUNT(*) AS requests
+     FROM http_requests r JOIN site_visits sv ON r.visit_id = sv.visit_id
+     GROUP BY sv.site_url ORDER BY requests DESC;"
+  echo ""
+  echo "=== FINGERPRINTING API CALLS ==="
+  sqlite3 -column "$DB" \
+    "SELECT sv.site_url,
+       COUNT(CASE WHEN j.symbol LIKE '%Canvas%' THEN 1 END) AS canvas,
+       COUNT(CASE WHEN j.symbol LIKE '%WebGL%' THEN 1 END) AS webgl,
+       COUNT(CASE WHEN j.symbol LIKE '%AudioContext%' THEN 1 END) AS audio,
+       COUNT(CASE WHEN j.symbol LIKE '%RTCPeerConnection%' THEN 1 END) AS webrtc
+     FROM javascript j JOIN site_visits sv ON j.visit_id = sv.visit_id
+     GROUP BY sv.site_url;"
+  echo ""
+  echo "=== KNOWN TRACKERS FOUND ==="
+  sqlite3 "$DB" \
+    "SELECT DISTINCT
+       CASE
+         WHEN r.url LIKE '%google-analytics%' THEN 'Google Analytics'
+         WHEN r.url LIKE '%googletagmanager%' THEN 'Google Tag Manager'
+         WHEN r.url LIKE '%doubleclick%' THEN 'Google DoubleClick'
+         WHEN r.url LIKE '%facebook.com/tr%' THEN 'Facebook Pixel'
+         WHEN r.url LIKE '%bat.bing%' THEN 'Bing UET'
+         WHEN r.url LIKE '%hotjar%' THEN 'Hotjar'
+         WHEN r.url LIKE '%mixpanel%' THEN 'Mixpanel'
+         WHEN r.url LIKE '%segment.io%' THEN 'Segment'
+         WHEN r.url LIKE '%fullstory%' THEN 'FullStory'
+         WHEN r.url LIKE '%clarity.ms%' THEN 'Microsoft Clarity'
+       END AS tracker,
+       sv.site_url
+     FROM http_requests r
+     JOIN site_visits sv ON r.visit_id = sv.visit_id
+     WHERE tracker IS NOT NULL
+     ORDER BY tracker, sv.site_url;"
+} > "$REPORT"
+
+cat "$REPORT"
+echo ""
+echo "Report saved to: $REPORT"
+
+# --- CLEANUP AFTER SESSION ---
+
+# Remove all stopped Docker containers
+docker container prune -f
+
+# Remove dangling Docker images (untagged intermediate layers)
+docker image prune -f
+
+# Clear virtualenv pip cache (free disk space)
+~/observatory/.venv/bin/pip cache purge
+
+# List all Observatory disk usage
+du -sh ~/observatory/crawls/
+du -sh ~/observatory/captures/
+du -sh ~/observatory/archives/
+du -sh ~/observatory/.venv/
+
+# Total Observatory footprint
+du -sh ~/observatory/
+
+# --- ROLLING BACK (after hostile page investigation) ---
+# If you used a VM snapshot before the session (recommended for hostile pages):
+# The Observatory scripts run on the HOST, not in a VM.
+# For maximum safety with hostile pages:
+# 1. Run Observatory scripts on host
+# 2. Do the actual BROWSING in a disposable VM or container
+# 3. Route the VM through the Observatory capture interface
+# 4. Roll back the VM after session — host stays clean
+
+# Delete a specific crawl session (to free disk space)
+rm -rf ~/observatory/crawls/test_crawl_20240101/
+
+# Delete a specific capture session
+rm -rf ~/observatory/captures/test_session_20240101/

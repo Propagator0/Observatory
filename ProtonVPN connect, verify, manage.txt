@@ -1,0 +1,111 @@
+# --- INITIAL SETUP (first time only) ---
+
+# Log in with your ProtonVPN account credentials
+protonvpn-cli login yourusername@email.com
+
+# You will be prompted for your ProtonVPN password interactively.
+# Note: use your ProtonVPN account password, not your email password.
+# If you use SSO/social login for ProtonVPN, generate an OpenVPN/WireGuard
+# password in the ProtonVPN web dashboard under Account → OpenVPN/WireGuard.
+
+# --- CONNECTING ---
+
+# Connect to the fastest available server (recommended for general use)
+protonvpn-cli connect --fastest
+
+# Connect to a specific country (Switzerland = no-logs jurisdiction, good choice)
+protonvpn-cli connect --cc CH
+
+# Connect to a specific country, WireGuard protocol (faster, lower latency)
+protonvpn-cli connect --cc CH --protocol wireguard
+
+# Connect to a specific country, OpenVPN UDP (more compatible with some networks)
+protonvpn-cli connect --cc CH --protocol openvpn-udp
+
+# Connect to a Secure Core server (routes through two countries — extra anonymity)
+# Secure Core: requires ProtonVPN Plus/Visionary plan
+protonvpn-cli connect --sc --cc CH
+
+# Connect to a P2P-optimized server (useful for high-bandwidth crawls)
+protonvpn-cli connect --p2p --cc SE
+
+# Connect to a specific server by name (get server list from ProtonVPN dashboard)
+protonvpn-cli connect CH#5
+
+# --- VERIFICATION (run this every time before starting a session) ---
+
+# Check VPN connection status
+protonvpn-cli status
+
+# Expected output when connected:
+# Status:     Connected
+# Server:     CH#5
+# Country:    Switzerland
+# Protocol:   WireGuard
+# IP:         185.XXX.XXX.XXX
+# Load:       23%
+
+# Verify your public IP has changed to the VPN exit IP
+curl --max-time 10 https://api64.ipify.org
+
+# Compare this IP against what protonvpn-cli status shows.
+# They should match. If your real IP appears here, VPN is not routing correctly.
+
+# Get full IP geolocation to verify country
+curl --max-time 10 https://ipapi.co/json/
+
+# Expected: country_name should be Switzerland (or whichever country you connected to)
+# If it shows your real country, something is wrong with the VPN routing.
+
+# Verify DNS is going through VPN (not leaking to your ISP's DNS)
+# This checks which DNS server resolves your queries
+curl --max-time 10 https://dnsleaktest.com/
+
+# For a quick CLI DNS leak check:
+nslookup whoami.akamai.net
+
+# The IP returned should be within the VPN's IP range, not your ISP's range
+
+# Check for WebRTC IP leak (the leak that bypasses VPN in browsers)
+# This is a manual check — go to: https://browserleaks.com/webrtc
+# WebRTC should show only the VPN IP, not your real IP.
+# If it shows your real IP: the Selenium authenticated session script
+# does not block WebRTC, so use Firefox with WebRTC disabled for sensitive sessions.
+
+# Disable WebRTC in Firefox for sensitive sessions:
+# about:config → media.peerconnection.enabled → false
+
+# --- MANAGING THE CONNECTION ---
+
+# Disconnect from VPN
+protonvpn-cli disconnect
+
+# Reconnect to the same server after a disconnect
+protonvpn-cli connect --last
+
+# Refresh connection (useful if connection drops during a long crawl)
+protonvpn-cli reconnect
+
+# Enable kill switch (blocks all internet if VPN drops — critical for investigation safety)
+# Note: kill switch support varies by ProtonVPN CLI version
+protonvpn-cli killswitch --on
+
+# Disable kill switch
+protonvpn-cli killswitch --off
+
+# View available servers
+protonvpn-cli servers --cc CH
+
+# Show all available country codes
+protonvpn-cli servers --available-countries
+
+# --- NETWORK STATE WITH VPN ACTIVE ---
+
+# After connecting, verify the tun0 interface appeared
+ip link show tun0
+
+# See the VPN routing table entry
+ip route show | grep tun0
+
+# See all routes (VPN adds a default route through the tunnel)
+ip route show table main

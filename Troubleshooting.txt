@@ -1,0 +1,134 @@
+# --- PROBLEM: docker: permission denied ---
+# CAUSE: User not in docker group, or group hasn't refreshed
+
+newgrp docker
+# If that doesn't work: log out and back in.
+# Nuclear option (not recommended, bypasses group membership):
+sudo docker ps
+
+# --- PROBLEM: tshark: Couldn't run /usr/bin/dumpcap in child process ---
+# CAUSE: dumpcap missing capabilities or user not in wireshark group
+
+sudo setcap cap_net_raw,cap_net_admin+eip /usr/bin/dumpcap
+# Then verify:
+getcap /usr/bin/dumpcap
+# Then try again:
+tshark -i eth0 -c 3 -q
+
+# --- PROBLEM: OpenWPM container exits immediately with no output ---
+# CAUSE: Usually insufficient shared memory (Firefox crashes without it)
+
+# Verify --shm-size 2g is in your docker run command
+# Test with explicit shm:
+docker run --rm --shm-size 2g ghcr.io/openwpm/openwpm:latest \
+  python -c "print('container OK')"
+
+# If container still exits: check Docker logs
+docker logs $(docker ps -lq 2>/dev/null || echo "no_container")
+
+# --- PROBLEM: OpenWPM crawl.sqlite is empty or has zero rows ---
+# CAUSE: Firefox failed to start, or page didn't load within timeout
+
+# Increase timeout and try with visible browser:
+python ~/observatory/scripts/crawlers/basic_crawl.py \
+  --sites "https://www.example.com" \
+  --timeout 120 \
+  --headless false
+
+# Check for OpenWPM log file:
+cat ~/observatory/crawls/latest_crawl_name/openwpm.log | tail -50
+
+# --- PROBLEM: Datasette shows "no databases found" ---
+# CAUSE: No crawl.sqlite files exist yet, or path mismatch
+
+# Find all sqlite files in Observatory:
+find ~/observatory -name "*.sqlite" 2>/dev/null
+
+# Launch Datasette with explicit path:
+source ~/observatory/.venv/bin/activate && \
+datasette serve ~/observatory/crawls/your_crawl_name/crawl.sqlite --port 8001
+
+# --- PROBLEM: ProtonVPN connect fails with authentication error ---
+# CAUSE: Wrong credentials (OpenVPN/WireGuard password, not account password)
+
+# Generate OpenVPN/WireGuard credentials:
+# 1. Log in at account.protonvpn.com
+# 2. Go to Account → OpenVPN / IKEv2 username
+# 3. Use the username and password shown there (different from your ProtonVPN login)
+
+protonvpn-cli logout
+protonvpn-cli login YOUR_OPENVPN_USERNAME
+
+# --- PROBLEM: VPN connected but curl still shows real IP ---
+# CAUSE: Split tunneling, routing leak, or kill switch not enabled
+
+# Check routing table:
+ip route show table main
+# All traffic should route through tun0, not directly through eth0
+
+# Check if tun0 interface exists:
+ip link show tun0
+
+# Force reconnect:
+protonvpn-cli disconnect && protonvpn-cli connect --cc CH
+
+# --- PROBLEM: Thermal throttling during crawl (7480) ---
+# SYMPTOMS: Crawls take much longer than expected, CPU frequencies drop
+
+# Check current temperatures:
+paste <(cat /sys/class/thermal/thermal_zone*/type) \
+      <(cat /sys/class/thermal/thermal_zone*/temp | awk '{print $1/1000 "°C"}') \
+  | column -t
+
+# Check CPU frequency throttling:
+grep "cpu MHz" /proc/cpuinfo | awk '{print $4}' | sort -n
+
+# Mitigations:
+# 1. Use longer timeouts (--timeout 90) to slow down the crawl
+# 2. Add sleep between site visits in the crawl script
+# 3. Close other applications during crawl
+# 4. Ensure laptop is on a hard surface (not soft surface blocking vents)
+# 5. Consider reducing to 1 browser (already the default: num_browsers=1)
+
+# Monitor temperature and frequency together:
+watch -n 3 '
+echo "=== CPU Frequencies ==="
+grep "cpu MHz" /proc/cpuinfo | awk "{print \$4}" | sort -n | head -1 | xargs echo "Min:"
+grep "cpu MHz" /proc/cpuinfo | awk "{print \$4}" | sort -n | tail -1 | xargs echo "Max:"
+echo ""
+echo "=== Temperatures ==="
+paste <(cat /sys/class/thermal/thermal_zone*/type) \
+      <(cat /sys/class/thermal/thermal_zone*/temp | awk "{print \$1/1000 \"°C\"}")
+'
+
+# --- PROBLEM: linux-hardened kernel + Docker errors ---
+# CAUSE: Hardened kernel disables some features Docker needs
+
+# Required sysctl settings for Docker on linux-hardened:
+echo "kernel.unprivileged_userns_clone=1" | sudo tee /etc/sysctl.d/99-docker.conf
+sudo sysctl --system
+
+# If using user namespaces in Docker:
+echo "user.max_user_namespaces=15000" | sudo tee -a /etc/sysctl.d/99-docker.conf
+sudo sysctl --system
+
+# Restart Docker after sysctl changes:
+sudo systemctl restart docker
+
+# Verify Docker can create containers:
+docker run --rm hello-world
+
+# --- PROBLEM: Selenium/geckodriver version mismatch ---
+# CAUSE: Firefox updated, geckodriver version no longer matches
+
+source ~/observatory/.venv/bin/activate
+
+# Force geckodriver reinstall to match current Firefox:
+pip install --upgrade geckodriver-autoinstaller
+python -c "import geckodriver_autoinstaller; geckodriver_autoinstaller.install(True)"
+
+# Check Firefox version:
+firefox --version
+
+# Check geckodriver version:
+geckodriver --version

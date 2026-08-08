@@ -1,0 +1,111 @@
+# --- ACTIVATE VIRTUALENV ---
+source ~/observatory/.venv/bin/activate
+
+# --- MANUAL LOGIN MODE (you log in, script records state) ---
+
+# Basic manual session: navigate to site, you log in when browser opens
+python ~/observatory/scripts/selenium/authenticated_session.py \
+  --target "https://www.example.com/login"
+
+# Manual session with additional pages to visit after you log in
+python ~/observatory/scripts/selenium/authenticated_session.py \
+  --target "https://www.example.com/login" \
+  --navigate "https://www.example.com/dashboard" "https://www.example.com/settings" "https://www.example.com/profile"
+
+# Manual session with longer dwell time (60 seconds per page)
+python ~/observatory/scripts/selenium/authenticated_session.py \
+  --target "https://www.example.com/login" \
+  --navigate "https://www.example.com/dashboard" \
+  --dwell-time 60
+
+# Manual session with custom session name and explicit capture interface
+python ~/observatory/scripts/selenium/authenticated_session.py \
+  --target "https://www.example.com/login" \
+  --navigate "https://www.example.com/dashboard" "https://www.example.com/account" \
+  --session-name "example_authenticated_20240115" \
+  --capture-interface tun0 \
+  --dwell-time 45
+
+# --- AUTOMATED LOGIN MODE (script handles login form) ---
+# Use only on accounts you own. The script tries common form selectors.
+
+# Automated login with post-login navigation
+python ~/observatory/scripts/selenium/authenticated_session.py \
+  --target "https://www.example.com" \
+  --login-url "https://www.example.com/login" \
+  --auto-login \
+  --username "youraccount@email.com" \
+  --password "yourpassword" \
+  --navigate "https://www.example.com/dashboard" "https://www.example.com/settings" \
+  --dwell-time 30 \
+  --session-name "example_auto_login_20240115" \
+  --capture-interface tun0
+
+# Automated login where login page is the same as target page
+python ~/observatory/scripts/selenium/authenticated_session.py \
+  --target "https://app.example.com" \
+  --auto-login \
+  --username "testuser@email.com" \
+  --password "testpassword123" \
+  --navigate "https://app.example.com/feed" "https://app.example.com/preferences" "https://app.example.com/privacy" \
+  --dwell-time 45 \
+  --session-name "app_full_authenticated_session" \
+  --capture-interface tun0
+
+# --- REVIEWING AUTHENTICATED SESSION OUTPUT ---
+
+# List all files captured during a session
+ls -la ~/observatory/crawls/example_authenticated_20240115/
+
+# View the session summary
+cat ~/observatory/crawls/example_authenticated_20240115/session_summary.json | python -m json.tool
+
+# View cookies captured from a specific page state
+cat ~/observatory/crawls/example_authenticated_20240115/page_states/01_initial/page_state.json \
+  | python -m json.tool \
+  | grep -A 5 '"cookies"'
+
+# View localStorage captured from a specific page state
+cat ~/observatory/crawls/example_authenticated_20240115/page_states/02_post_login/page_state.json \
+  | python -m json.tool \
+  | python -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('localStorage',{}), indent=2))"
+
+# View all third-party scripts loaded on a page
+cat ~/observatory/crawls/example_authenticated_20240115/page_states/02_post_login/page_state.json \
+  | python -m json.tool \
+  | python -c "import sys,json; d=json.load(sys.stdin); [print(s) for s in d.get('loaded_scripts',[])]"
+
+# View all iframes on a page
+cat ~/observatory/crawls/example_authenticated_20240115/page_states/02_post_login/page_state.json \
+  | python -m json.tool \
+  | python -c "import sys,json; d=json.load(sys.stdin); [print(f) for f in d.get('iframes',[])]"
+
+# Open screenshot in default image viewer
+xdg-open ~/observatory/crawls/example_authenticated_20240115/page_states/01_initial/screenshot.png
+
+# Open all screenshots in sequence
+for img in ~/observatory/crawls/example_authenticated_20240115/page_states/*/screenshot.png; do
+  echo "Opening: $img"
+  xdg-open "$img"
+  sleep 2
+done
+
+# --- DISABLING WEBRTC IN FIREFOX FOR SENSITIVE SESSIONS ---
+# WebRTC can leak your real IP even through VPN.
+# Disable it before opening Firefox for sensitive authenticated sessions.
+
+# Method 1: Via Firefox preferences (persistent, per-profile)
+# Open Firefox → address bar: about:config → search: media.peerconnection.enabled → set to false
+
+# Method 2: Create a Firefox profile with WebRTC disabled for forensic use
+firefox --createProfile forensic-profile
+
+# Then launch Firefox with that profile and set the preference:
+firefox -P forensic-profile -url "about:config"
+# Search: media.peerconnection.enabled → double-click to set false
+# This profile now always has WebRTC disabled
+
+# Launch authenticated session with WebRTC-disabled profile (requires modifying the script's
+# browser Options to specify the profile path):
+# options.add_argument("-profile")
+# options.add_argument("/home/yourusername/.mozilla/firefox/PROFILEID.forensic-profile")
