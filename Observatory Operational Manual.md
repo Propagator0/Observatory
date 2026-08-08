@@ -54,10 +54,10 @@ docker info | grep "Server Version"
 # See Section 2.
 
 # Verify OpenWPM image is present locally
-docker images ghcr.io/openwpm/openwpm
+docker images openwpm/openwpm
 
 # Expected: a row showing the image with a SIZE of ~3-4GB
-# If empty: docker pull ghcr.io/openwpm/openwpm:latest
+# If empty: docker pull openwpm/openwpm:latest
 
 # Verify tshark is installed and has capture permissions
 tshark --version
@@ -89,7 +89,7 @@ protonvpn-cli --version
 
 # Full health check — run all verifications in sequence and review output
 echo "=== Docker ===" && docker info | grep "Server Version" && \
-echo "=== OpenWPM Image ===" && docker images ghcr.io/openwpm/openwpm | tail -1 && \
+echo "=== OpenWPM Image ===" && docker images openwpm/openwpm | tail -1 && \
 echo "=== tshark ===" && tshark --version | head -1 && \
 echo "=== Datasette ===" && ~/observatory/.venv/bin/datasette --version && \
 echo "=== Selenium ===" && ~/observatory/.venv/bin/python -c "import selenium; print('Selenium', selenium.__version__)" && \
@@ -633,7 +633,7 @@ docker-compose run --rm -d openwpm python /scripts/crawlers/basic_crawl.py \
   --name "background_crawl_01"
 
 # Watch logs from a detached crawl
-docker logs -f $(docker ps -q --filter "ancestor=ghcr.io/openwpm/openwpm")
+docker logs -f $(docker ps -q --filter "ancestor=openwpm/openwpm")
 
 # --- DIRECT DOCKER INVOCATION (maximum control) ---
 
@@ -644,7 +644,7 @@ docker run --rm \
   -v ~/observatory/crawls:/crawl_output \
   -v ~/observatory/scripts:/scripts:ro \
   -it \
-  ghcr.io/openwpm/openwpm:latest \
+  openwpm/openwpm:latest \
   /bin/bash
 
 # Inside the container shell, run the crawl script:
@@ -656,7 +656,7 @@ docker run --rm \
   --shm-size 2g \
   -v ~/observatory/crawls/custom_session:/crawl_output \
   -v ~/observatory/scripts:/scripts:ro \
-  ghcr.io/openwpm/openwpm:latest \
+  openwpm/openwpm:latest \
   python /scripts/crawlers/basic_crawl.py \
   --sites "https://www.example.com" \
   --timeout 60
@@ -670,7 +670,7 @@ watch -n 5 'ls -lh ~/observatory/crawls/'
 tail -f ~/observatory/crawls/latest_crawl/openwpm.log
 
 # Watch Docker container resource usage (CPU/memory during crawl)
-docker stats $(docker ps -q --filter "ancestor=ghcr.io/openwpm/openwpm")
+docker stats $(docker ps -q --filter "ancestor=openwpm/openwpm")
 
 # Monitor system temperature during crawl (thermal watch for the 7480)
 watch -n 5 'paste <(cat /sys/class/thermal/thermal_zone*/type) <(cat /sys/class/thermal/thermal_zone*/temp) | column -s $'"'"'\t'"'"' -t'
@@ -1355,10 +1355,10 @@ sqlite3 -json "$DB" \
 docker images
 
 # Pull latest OpenWPM image (update when project releases new version)
-docker pull ghcr.io/openwpm/openwpm:latest
+docker pull openwpm/openwpm:latest
 
 # Check OpenWPM image size
-docker images ghcr.io/openwpm/openwpm:latest --format "{{.Size}}"
+docker images openwpm/openwpm:latest --format "{{.Size}}"
 
 # Remove old/dangling images (free up disk space)
 docker image prune -f
@@ -1572,7 +1572,7 @@ tshark -i eth0 -c 3 -q
 
 # Verify --shm-size 2g is in your docker run command
 # Test with explicit shm:
-docker run --rm --shm-size 2g ghcr.io/openwpm/openwpm:latest \
+docker run --rm --shm-size 2g openwpm/openwpm:latest \
   python -c "print('container OK')"
 
 # If container still exits: check Docker logs

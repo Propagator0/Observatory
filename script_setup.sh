@@ -48,9 +48,13 @@ CAPTURE_INTERFACE="eth0"
 # Datasette port — the browser UI for exploring OpenWPM's SQLite output
 DATASETTE_PORT="8001"
 
-# Docker image name for OpenWPM — the project's official image
-# Check for newer tags at: https://github.com/openwpm/OpenWPM/pkgs/container/openwpm
-OPENWPM_IMAGE="ghcr.io/openwpm/openwpm:latest"
+# Docker image name for OpenWPM — the project's official image, published to
+# Docker Hub. (It is not on ghcr.io; that path returns "denied" because no such
+# package exists there.)
+# Tags: https://hub.docker.com/r/openwpm/openwpm/tags
+# For a reproducible crawl, pin a version tag — e.g. openwpm/openwpm:0.35.0 —
+# so a later `latest` cannot silently change your instrument mid-study.
+OPENWPM_IMAGE="openwpm/openwpm:latest"
 
 # Your ProtonVPN credentials file path.
 # ProtonVPN CLI on Linux uses a stored credentials system —
@@ -246,6 +250,11 @@ setup_docker() {
     DOCKER_DAEMON_CONFIG="/etc/docker/daemon.json"
     if [ ! -f "${DOCKER_DAEMON_CONFIG}" ]; then
         log_step "Configuring Docker daemon log rotation..."
+        # Arch's docker package does not ship /etc/docker, and the daemon does
+        # not create it on first start — so `tee` here would fail on a clean
+        # install, and under `set -e` that aborts the whole setup. Create the
+        # parent directory first.
+        sudo mkdir -p "$(dirname "${DOCKER_DAEMON_CONFIG}")"
         sudo tee "${DOCKER_DAEMON_CONFIG}" > /dev/null <<'EOF'
 {
   "log-driver": "json-file",
@@ -266,7 +275,7 @@ EOF
 # =============================================================================
 # SECTION 3: OPENWPM DOCKER IMAGE
 # Pull the official OpenWPM container image.
-# The project maintains an image at ghcr.io/openwpm/openwpm
+# The project publishes an image to Docker Hub as openwpm/openwpm.
 # This is the correct approach on Arch — avoids fighting OpenWPM's Ubuntu
 # assumptions against Arch's Python packaging.
 # =============================================================================
@@ -277,7 +286,14 @@ setup_openwpm() {
     log_step "Pulling OpenWPM Docker image: ${OPENWPM_IMAGE}"
     log_info "This image is ~3-4GB. First pull will take a while on slower connections."
     log_info "Subsequent runs will use the cached image."
-    sudo docker pull "${OPENWPM_IMAGE}"
+    if ! sudo docker pull "${OPENWPM_IMAGE}"; then
+        log_error "Could not pull ${OPENWPM_IMAGE}"
+        log_error "A 'denied' or 'not found' here usually means the image reference"
+        log_error "is wrong rather than that you lack access — the image is public."
+        log_error "Check the tag list: https://hub.docker.com/r/openwpm/openwpm/tags"
+        log_error "then set OPENWPM_IMAGE at the top of this script and re-run."
+        exit 1
+    fi
     log_success "OpenWPM image pulled"
 
     # Clone the OpenWPM repository for example scripts, demo crawlers,
@@ -467,33 +483,62 @@ setup_protonvpn() {
         return 0
     fi
 
-    # ProtonVPN provides an official Linux package. On Arch, the recommended
-    # installation is via the AUR package 'protonvpn' or via their official
-    # Debian/RPM packages (we'll use the official install script as fallback).
+    # Nothing in this section is permitted to abort the install. The VPN
+    # changes where your traffic appears to originate; it is not what makes
+    # capture or crawling work. Losing it should cost you the VPN, not the
+    # remaining sections that write every script the Observatory runs on.
+    local VPN_OK=false
 
-    # Check for AUR helpers
+    local AUR_HELPER=""
     if command -v yay &>/dev/null; then
-        log_step "Installing protonvpn via yay (AUR)..."
-        yay -S --needed --noconfirm protonvpn
+        AUR_HELPER="yay"
     elif command -v paru &>/dev/null; then
-        log_step "Installing protonvpn via paru (AUR)..."
-        paru -S --needed --noconfirm protonvpn
-    else
-        log_warn "No AUR helper (yay/paru) found."
-        log_warn "ProtonVPN will be installed via the official Python package."
-        log_step "Installing protonvpn-cli via pip (official ProtonVPN package)..."
+        AUR_HELPER="paru"
+    fi
 
-        # ProtonVPN publishes a Python CLI package
-        # This is the cross-platform fallback that works on Arch without AUR
-        source "${OBSERVATORY_ROOT}/.venv/bin/activate"
-        pip install --quiet protonvpn-cli || {
-            log_warn "pip install of protonvpn-cli failed."
-            log_warn "Manual installation: https://protonvpn.com/support/linux-vpn-setup/"
-            log_warn "Continuing script — VPN setup will need to be completed manually."
+    if [ -n "${AUR_HELPER}" ]; then
+        # ProtonVPN's AUR packaging has been renamed more than once, and a
+        # name that is right today may be gone tomorrow. Try the known
+        # candidates in turn instead of betting the install on any one of them.
+        for PKG in protonvpn-cli proton-vpn-gtk-app protonvpn; do
+            log_step "Trying ${AUR_HELPER} -S ${PKG} ..."
+            if ${AUR_HELPER} -S --needed --noconfirm "${PKG}"; then
+                log_success "Installed ${PKG} from the AUR"
+                VPN_OK=true
+                break
+            fi
+            log_warn "${PKG} unavailable — trying the next candidate"
+        done
+        [ "${VPN_OK}" = true ] || log_warn "No ProtonVPN AUR package installed — falling back to pip"
+    else
+        log_warn "No AUR helper (yay/paru) found — falling back to pip"
+    fi
+
+    if [ "${VPN_OK}" != true ]; then
+        if [ -f "${OBSERVATORY_ROOT}/.venv/bin/activate" ]; then
+            log_step "Installing protonvpn-cli via pip..."
+            # shellcheck disable=SC1091
+            source "${OBSERVATORY_ROOT}/.venv/bin/activate"
+            if pip install --quiet protonvpn-cli; then
+                VPN_OK=true
+                log_success "protonvpn-cli installed into the Observatory virtualenv"
+                log_info "It lives in the venv — activate that first, or call it directly:"
+                log_info "  ${OBSERVATORY_ROOT}/.venv/bin/protonvpn-cli"
+            else
+                log_warn "pip install of protonvpn-cli failed"
+            fi
             deactivate
-            return 0
-        }
-        deactivate
+        else
+            log_warn "Virtualenv not found — skipping the pip fallback"
+        fi
+    fi
+
+    if [ "${VPN_OK}" != true ]; then
+        log_warn "Could not install ProtonVPN automatically — continuing without it."
+        log_warn "Every other Observatory tool still works. Until a VPN is running,"
+        log_warn "crawls and captures simply originate from your real address."
+        log_warn "Manual setup: https://protonvpn.com/support/linux-vpn-setup/"
+        return 0
     fi
 
     log_success "ProtonVPN CLI installed"
@@ -553,7 +598,7 @@ from datetime import datetime
 # OpenWPM is run inside Docker, so this script generates the crawl configuration
 # and then invokes the Docker container. This means you don't fight Arch vs Ubuntu.
 
-OPENWPM_IMAGE = "ghcr.io/openwpm/openwpm:latest"
+OPENWPM_IMAGE = "openwpm/openwpm:latest"
 OBSERVATORY_ROOT = Path(__file__).parent.parent.parent
 CRAWLS_DIR = OBSERVATORY_ROOT / "crawls"
 LOGS_DIR = OBSERVATORY_ROOT / "logs"
@@ -803,7 +848,7 @@ def run_docker_crawl(sites, crawl_name, crawl_dir, headless, timeout):
         print(f"\n✗ Crawl failed with exit code {e.returncode}")
         print("Check Docker logs and verify:")
         print("  1. ProtonVPN is connected (protonvpn-cli status)")
-        print("  2. Docker image is current (docker pull ghcr.io/openwpm/openwpm:latest)")
+        print("  2. Docker image is current (docker pull openwpm/openwpm:latest)")
         print("  3. Sufficient disk space (df -h)")
         raise
 
@@ -1761,7 +1806,7 @@ services:
 
   # OpenWPM: the instrumented browser crawling engine
   openwpm:
-    image: ghcr.io/openwpm/openwpm:latest
+    image: openwpm/openwpm:latest
     network_mode: host         # Inherits host VPN routing (ProtonVPN must be connected on host)
     shm_size: '2gb'            # Firefox needs this; containers default to 64MB
     volumes:
