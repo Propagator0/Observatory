@@ -483,33 +483,62 @@ setup_protonvpn() {
         return 0
     fi
 
-    # ProtonVPN provides an official Linux package. On Arch, the recommended
-    # installation is via the AUR package 'protonvpn' or via their official
-    # Debian/RPM packages (we'll use the official install script as fallback).
+    # Nothing in this section is permitted to abort the install. The VPN
+    # changes where your traffic appears to originate; it is not what makes
+    # capture or crawling work. Losing it should cost you the VPN, not the
+    # remaining sections that write every script the Observatory runs on.
+    local VPN_OK=false
 
-    # Check for AUR helpers
+    local AUR_HELPER=""
     if command -v yay &>/dev/null; then
-        log_step "Installing protonvpn via yay (AUR)..."
-        yay -S --needed --noconfirm protonvpn
+        AUR_HELPER="yay"
     elif command -v paru &>/dev/null; then
-        log_step "Installing protonvpn via paru (AUR)..."
-        paru -S --needed --noconfirm protonvpn
-    else
-        log_warn "No AUR helper (yay/paru) found."
-        log_warn "ProtonVPN will be installed via the official Python package."
-        log_step "Installing protonvpn-cli via pip (official ProtonVPN package)..."
+        AUR_HELPER="paru"
+    fi
 
-        # ProtonVPN publishes a Python CLI package
-        # This is the cross-platform fallback that works on Arch without AUR
-        source "${OBSERVATORY_ROOT}/.venv/bin/activate"
-        pip install --quiet protonvpn-cli || {
-            log_warn "pip install of protonvpn-cli failed."
-            log_warn "Manual installation: https://protonvpn.com/support/linux-vpn-setup/"
-            log_warn "Continuing script — VPN setup will need to be completed manually."
+    if [ -n "${AUR_HELPER}" ]; then
+        # ProtonVPN's AUR packaging has been renamed more than once, and a
+        # name that is right today may be gone tomorrow. Try the known
+        # candidates in turn instead of betting the install on any one of them.
+        for PKG in protonvpn-cli proton-vpn-gtk-app protonvpn; do
+            log_step "Trying ${AUR_HELPER} -S ${PKG} ..."
+            if ${AUR_HELPER} -S --needed --noconfirm "${PKG}"; then
+                log_success "Installed ${PKG} from the AUR"
+                VPN_OK=true
+                break
+            fi
+            log_warn "${PKG} unavailable — trying the next candidate"
+        done
+        [ "${VPN_OK}" = true ] || log_warn "No ProtonVPN AUR package installed — falling back to pip"
+    else
+        log_warn "No AUR helper (yay/paru) found — falling back to pip"
+    fi
+
+    if [ "${VPN_OK}" != true ]; then
+        if [ -f "${OBSERVATORY_ROOT}/.venv/bin/activate" ]; then
+            log_step "Installing protonvpn-cli via pip..."
+            # shellcheck disable=SC1091
+            source "${OBSERVATORY_ROOT}/.venv/bin/activate"
+            if pip install --quiet protonvpn-cli; then
+                VPN_OK=true
+                log_success "protonvpn-cli installed into the Observatory virtualenv"
+                log_info "It lives in the venv — activate that first, or call it directly:"
+                log_info "  ${OBSERVATORY_ROOT}/.venv/bin/protonvpn-cli"
+            else
+                log_warn "pip install of protonvpn-cli failed"
+            fi
             deactivate
-            return 0
-        }
-        deactivate
+        else
+            log_warn "Virtualenv not found — skipping the pip fallback"
+        fi
+    fi
+
+    if [ "${VPN_OK}" != true ]; then
+        log_warn "Could not install ProtonVPN automatically — continuing without it."
+        log_warn "Every other Observatory tool still works. Until a VPN is running,"
+        log_warn "crawls and captures simply originate from your real address."
+        log_warn "Manual setup: https://protonvpn.com/support/linux-vpn-setup/"
+        return 0
     fi
 
     log_success "ProtonVPN CLI installed"
