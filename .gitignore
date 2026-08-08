@@ -1,0 +1,72 @@
+# =============================================================================
+# OBSERVATORY — .gitignore
+#
+# The first block is the one that matters. This project's whole purpose is
+# recording network traffic and browser state, so the working files it
+# produces are, by construction, sensitive: real browsing history, real
+# request bodies, and live session tokens. None of it belongs in git.
+#
+# The default OBSERVATORY_ROOT is ~/observatory, outside any checkout, so
+# these normally never appear here. They are listed anyway for the case where
+# someone points OBSERVATORY_ROOT at the repository, or copies output in for
+# a closer look and forgets it is there.
+# =============================================================================
+
+# --- Captured and recorded data ---------------------------------------------
+captures/
+crawls/
+archives/
+screenshots/
+sessions/
+logs/
+
+*.pcap
+*.pcapng
+*.cap
+
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# Selenium session state. authenticated_session.py writes cookies and
+# localStorage to JSON — these are live credentials, not just metadata.
+session_state.json
+*_state.json
+cookies.json
+
+# --- Credentials -------------------------------------------------------------
+.env
+.env.*
+*.creds
+credentials.json
+protonvpn.conf
+*.ovpn
+*.pem
+*.key
+
+# --- Provisioned tooling -----------------------------------------------------
+# Written into OBSERVATORY_ROOT by script_setup.sh, not authored here.
+.venv/
+venv/
+openwpm-repo/
+datasette/metadata.json
+docker-compose.override.yml
+MANUAL.md
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Editors and OS ----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
