@@ -246,6 +246,11 @@ setup_docker() {
     DOCKER_DAEMON_CONFIG="/etc/docker/daemon.json"
     if [ ! -f "${DOCKER_DAEMON_CONFIG}" ]; then
         log_step "Configuring Docker daemon log rotation..."
+        # Arch's docker package does not ship /etc/docker, and the daemon does
+        # not create it on first start — so `tee` here would fail on a clean
+        # install, and under `set -e` that aborts the whole setup. Create the
+        # parent directory first.
+        sudo mkdir -p "$(dirname "${DOCKER_DAEMON_CONFIG}")"
         sudo tee "${DOCKER_DAEMON_CONFIG}" > /dev/null <<'EOF'
 {
   "log-driver": "json-file",
