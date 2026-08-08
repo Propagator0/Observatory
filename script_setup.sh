@@ -48,9 +48,13 @@ CAPTURE_INTERFACE="eth0"
 # Datasette port — the browser UI for exploring OpenWPM's SQLite output
 DATASETTE_PORT="8001"
 
-# Docker image name for OpenWPM — the project's official image
-# Check for newer tags at: https://github.com/openwpm/OpenWPM/pkgs/container/openwpm
-OPENWPM_IMAGE="ghcr.io/openwpm/openwpm:latest"
+# Docker image name for OpenWPM — the project's official image, published to
+# Docker Hub. (It is not on ghcr.io; that path returns "denied" because no such
+# package exists there.)
+# Tags: https://hub.docker.com/r/openwpm/openwpm/tags
+# For a reproducible crawl, pin a version tag — e.g. openwpm/openwpm:0.35.0 —
+# so a later `latest` cannot silently change your instrument mid-study.
+OPENWPM_IMAGE="openwpm/openwpm:latest"
 
 # Your ProtonVPN credentials file path.
 # ProtonVPN CLI on Linux uses a stored credentials system —
@@ -271,7 +275,7 @@ EOF
 # =============================================================================
 # SECTION 3: OPENWPM DOCKER IMAGE
 # Pull the official OpenWPM container image.
-# The project maintains an image at ghcr.io/openwpm/openwpm
+# The project publishes an image to Docker Hub as openwpm/openwpm.
 # This is the correct approach on Arch — avoids fighting OpenWPM's Ubuntu
 # assumptions against Arch's Python packaging.
 # =============================================================================
@@ -282,7 +286,14 @@ setup_openwpm() {
     log_step "Pulling OpenWPM Docker image: ${OPENWPM_IMAGE}"
     log_info "This image is ~3-4GB. First pull will take a while on slower connections."
     log_info "Subsequent runs will use the cached image."
-    sudo docker pull "${OPENWPM_IMAGE}"
+    if ! sudo docker pull "${OPENWPM_IMAGE}"; then
+        log_error "Could not pull ${OPENWPM_IMAGE}"
+        log_error "A 'denied' or 'not found' here usually means the image reference"
+        log_error "is wrong rather than that you lack access — the image is public."
+        log_error "Check the tag list: https://hub.docker.com/r/openwpm/openwpm/tags"
+        log_error "then set OPENWPM_IMAGE at the top of this script and re-run."
+        exit 1
+    fi
     log_success "OpenWPM image pulled"
 
     # Clone the OpenWPM repository for example scripts, demo crawlers,
@@ -558,7 +569,7 @@ from datetime import datetime
 # OpenWPM is run inside Docker, so this script generates the crawl configuration
 # and then invokes the Docker container. This means you don't fight Arch vs Ubuntu.
 
-OPENWPM_IMAGE = "ghcr.io/openwpm/openwpm:latest"
+OPENWPM_IMAGE = "openwpm/openwpm:latest"
 OBSERVATORY_ROOT = Path(__file__).parent.parent.parent
 CRAWLS_DIR = OBSERVATORY_ROOT / "crawls"
 LOGS_DIR = OBSERVATORY_ROOT / "logs"
@@ -808,7 +819,7 @@ def run_docker_crawl(sites, crawl_name, crawl_dir, headless, timeout):
         print(f"\n✗ Crawl failed with exit code {e.returncode}")
         print("Check Docker logs and verify:")
         print("  1. ProtonVPN is connected (protonvpn-cli status)")
-        print("  2. Docker image is current (docker pull ghcr.io/openwpm/openwpm:latest)")
+        print("  2. Docker image is current (docker pull openwpm/openwpm:latest)")
         print("  3. Sufficient disk space (df -h)")
         raise
 
@@ -1766,7 +1777,7 @@ services:
 
   # OpenWPM: the instrumented browser crawling engine
   openwpm:
-    image: ghcr.io/openwpm/openwpm:latest
+    image: openwpm/openwpm:latest
     network_mode: host         # Inherits host VPN routing (ProtonVPN must be connected on host)
     shm_size: '2gb'            # Firefox needs this; containers default to 64MB
     volumes:
